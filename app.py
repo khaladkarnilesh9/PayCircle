@@ -3,14 +3,38 @@
 # Add your full working application logic here...
 # import streamlit as st # Commented out the initial one, as it's re-imported later.
 # st.title("Attendance Log System - Placeholder") # Removed this initial title
-
-
 import streamlit as st
 import pandas as pd
 from datetime import datetime, timezone, timedelta
 import os
 import pytz
 import plotly.express as px
+
+# Initialize session state variables
+if 'active_page' not in st.session_state:
+    st.session_state.active_page = "Home"  # Set your default page
+if 'order_items' not in st.session_state:
+    st.session_state.order_items = []
+
+# Your navigation code would go here (buttons that set st.session_state.active_page)
+
+# Then your page rendering logic
+if st.session_state.active_page == "Home":
+    # Home page content
+    st.title("Welcome to the Order System")
+    # Add navigation buttons
+    if st.button("Create New Order"):
+        st.session_state.active_page = "Create Order"
+        
+elif st.session_state.active_page == "Create Order":
+    st.title("Create New Order") 
+    try:
+        stores_df = pd.read_csv("agri_stores.csv")
+        products_df = pd.read_csv("symplanta_products_with_images.csv")
+    except FileNotFoundError as e:
+        st.error(f"Error: Required CSV file not found. Please check file names and paths. Missing: {e.filename}")
+        st.stop()
+
 
 # --- Matplotlib Configuration ---
 import matplotlib
