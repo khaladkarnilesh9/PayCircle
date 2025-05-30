@@ -765,106 +765,148 @@ elif nav == "View Logs":
 
 elif st.session_state.active_page == "Create Order":
     st.title("Create New Order") 
+    
+    # Load data with better error handling
     try:
         stores_df = pd.read_csv("agri_stores.csv")
         products_df = pd.read_csv("symplanta_products_with_images.csv")
     except FileNotFoundError as e:
         st.error(f"Error: Required CSV file not found. Please check file names and paths. Missing: {e.filename}")
         st.stop()
+    except Exception as e:
+        st.error(f"Error loading data files: {str(e)}")
+        st.stop()
 
-    # Ensure stores_df is not empty and has the 'StoreName' column
-    if stores_df.empty or "StoreName" not in stores_df.columns:
-        st.error("Store data is missing or invalid. Please check 'agri_stores.csv'.")
+    # Validate stores data
+    if stores_df.empty:
+        st.error("Store data is empty. Please check 'agri_stores.csv'.")
         st.stop()
     
-    store_options = sorted(stores_df["StoreName"].dropna().astype(str).unique())
-    if not store_options:
-        st.error("No store names found in 'agri_stores.csv'.")
+    required_store_columns = ["StoreName"]
+    missing_store_cols = [col for col in required_store_columns if col not in stores_df.columns]
+    if missing_store_cols:
+        st.error(f"Store data is missing required columns: {', '.join(missing_store_cols)}")
         st.stop()
-        
+    
+    # Get store options with validation
+    store_options = stores_df["StoreName"].dropna().astype(str).unique()
+    if len(store_options) == 0:
+        st.error("No valid store names found in 'agri_stores.csv'.")
+        st.stop()
+    
+    store_options = sorted(store_options)
     store_name = st.selectbox("Select Store", store_options)
 
-    # --- MODIFICATION START ---
+    # Get selected store details
     selected_store_df = stores_df[stores_df["StoreName"] == store_name]
     if selected_store_df.empty:
         st.error(f"Details for store '{store_name}' not found. This should not happen if selection is from available options.")
-        st.stop() 
-    else:
-        selected_store = selected_store_df.iloc[0]
-    # --- MODIFICATION END ---
-        
-    # Ensure products_df is not empty and has the 'Product Name' column
-    if products_df.empty or "Product Name" not in products_df.columns:
-        st.error("Product data is missing or invalid. Please check 'symplanta_products_with_images.csv'.")
+        st.stop()
+    
+    selected_store = selected_store_df.iloc[0]
+
+    # Validate products data
+    if products_df.empty:
+        st.error("Product data is empty. Please check 'symplanta_products_with_images.csv'.")
+        st.stop()
+    
+    required_product_columns = ["Product Name", "Size", "Price"]
+    missing_product_cols = [col for col in required_product_columns if col not in products_df.columns]
+    if missing_product_cols:
+        st.error(f"Product data is missing required columns: {', '.join(missing_product_cols)}")
         st.stop()
 
-    product_options = sorted(products_df["Product Name"].dropna().astype(str).unique())
-    if not product_options:
-        st.error("No product names found in 'symplanta_products_with_images.csv'.")
+    # Get product options with validation
+    product_options = products_df["Product Name"].dropna().astype(str).unique()
+    if len(product_options) == 0:
+        st.error("No valid product names found in 'symplanta_products_with_images.csv'.")
         st.stop()
+    
+    product_options = sorted(product_options)
+    product_name = st.selectbox("Select Product", product_options)
 
-    product_name = st.selectbox(
-        "Select Product",
-        product_options
-    )
-
-    # Filter for selected product to get available sizes
+    # Get size options for selected product
     product_sizes_df = products_df[products_df["Product Name"] == product_name]
-    if product_sizes_df.empty or "Size" not in product_sizes_df.columns:
-        st.error(f"No sizes found for product '{product_name}' or 'Size' column is missing.")
+    if product_sizes_df.empty:
+        st.error(f"No products found with name '{product_name}'.")
         st.stop()
-
-    size_options = sorted(product_sizes_df["Size"].dropna().astype(str).unique())
-    if not size_options:
+    
+    size_options = product_sizes_df["Size"].dropna().astype(str).unique()
+    if len(size_options) == 0:
         st.error(f"No size options available for product '{product_name}'.")
-        st.stop() # Or handle this by disabling further inputs
+        st.stop()
+    
+    size_options = sorted(size_options)
+    size = st.selectbox("Select Size", size_options)
 
-    size = st.selectbox(
-        "Select Size",
-        size_options
-    )
+    # Quantity input
+    quantity = st.number_input("Enter Quantity", min_value=1, value=1, step=1)
 
-    quantity = st.number_input("Enter Quantity", min_value=1, value=1)
-
+    # Add to order button
     if st.button("Add to Order", type="primary"):
-        if "order_items" not in st.session_state: st.session_state["order_items"] = []
+        if "order_items" not in st.session_state:
+            st.session_state["order_items"] = []
         
-        # Get the specific product variant (product name + size)
-        selected_product_variant_df = product_sizes_df[product_sizes_df["Size"] == size]
+        # Get the specific product variant
+        selected_product_variant_df = product_sizes_df[
+            (product_sizes_df["Size"] == size) & 
+            (product_sizes_df["Product Name"] == product_name)
+        ]
         
-        if not selected_product_variant_df.empty:
+        if selected_product_variant_df.empty:
+            st.error(f"Product variant '{product_name} - {size}' not found.")
+        else:
             selected_product = selected_product_variant_df.iloc[0]
-            if "Price" not in selected_product or pd.isna(selected_product["Price"]):
-                st.error(f"Price information is missing for {product_name} - {size}.")
-            else:
-                item_price = pd.to_numeric(selected_product["Price"], errors='coerce')
-                if pd.isna(item_price):
-                    st.error(f"Invalid price format for {product_name} - {size}.")
-                else:
-                    item = {
-                        "Store": store_name, "Product": product_name, "Size": size,
-                        "Quantity": quantity, "Unit Price": item_price,
-                        "Total": item_price * quantity
-                    }
-                    st.session_state["order_items"].append(item)
-                    st.success("Item added to order!")
-        else: 
-            st.warning(f"Details for product '{product_name}' with size '{size}' not found.")
+            try:
+                item_price = float(selected_product["Price"])
+                item_total = item_price * quantity
+                
+                item = {
+                    "Store": store_name,
+                    "Product": product_name,
+                    "Size": size,
+                    "Quantity": quantity,
+                    "Unit Price": item_price,
+                    "Total": item_total
+                }
+                
+                st.session_state["order_items"].append(item)
+                st.success("Item added to order!")
+            except (ValueError, TypeError) as e:
+                st.error(f"Invalid price format for {product_name} - {size}. Please check the product data.")
+            except Exception as e:
+                st.error(f"Error adding item to order: {str(e)}")
 
+    # Display order summary if items exist
     if "order_items" in st.session_state and st.session_state["order_items"]:
         st.subheader("🧾 Order Summary")
-        order_df = pd.DataFrame(st.session_state["order_items"])
-        # Ensure Unit Price and Total are numeric before formatting
-        order_df["Unit Price"] = pd.to_numeric(order_df["Unit Price"], errors='coerce').fillna(0)
-        order_df["Total"] = pd.to_numeric(order_df["Total"], errors='coerce').fillna(0)
-        
-        order_df_display = order_df.copy() # For display formatting
-        order_df_display["Unit Price"] = order_df_display["Unit Price"].apply(lambda x: f"₹{x:,.2f}")
-        order_df_display["Total"] = order_df_display["Total"].apply(lambda x: f"₹{x:,.2f}")
-        
-        # Explicitly define column order for display
-        display_columns = ["Store", "Product", "Size", "Quantity", "Unit Price", "Total"]
-        st.dataframe(order_df_display[display_columns], use_container_width=True, hide_index=True)
-        st.markdown(f"**Grand Total: ₹{order_df['Total'].sum():,.2f}**")
-
-# ... (rest of the code) ...
+        try:
+            order_df = pd.DataFrame(st.session_state["order_items"])
+            
+            # Convert numeric columns
+            numeric_cols = ["Unit Price", "Total"]
+            for col in numeric_cols:
+                order_df[col] = pd.to_numeric(order_df[col], errors='coerce')
+            
+            # Check for invalid numeric values
+            if order_df[numeric_cols].isna().any().any():
+                st.warning("Some items have invalid prices. Please review your order.")
+            
+            # Create display version with formatted currency
+            order_df_display = order_df.copy()
+            order_df_display["Unit Price"] = order_df_display["Unit Price"].apply(lambda x: f"₹{x:,.2f}" if pd.notna(x) else "N/A")
+            order_df_display["Total"] = order_df_display["Total"].apply(lambda x: f"₹{x:,.2f}" if pd.notna(x) else "N/A")
+            
+            # Display columns
+            display_columns = ["Store", "Product", "Size", "Quantity", "Unit Price", "Total"]
+            st.dataframe(order_df_display[display_columns], use_container_width=True, hide_index=True)
+            
+            # Calculate and display grand total
+            grand_total = order_df["Total"].sum()
+            if pd.isna(grand_total):
+                st.warning("Cannot calculate total due to invalid prices in some items")
+            else:
+                st.markdown(f"**Grand Total: ₹{grand_total:,.2f}**")
+                
+        except Exception as e:
+            st.error(f"Error displaying order summary: {str(e)}")
